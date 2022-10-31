@@ -1,5 +1,4 @@
-﻿using MaterialDesignThemes.Wpf;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -11,6 +10,7 @@ using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Navigation;
+using MaterialDesignThemes.Wpf;
 using TournamentAssistantShared;
 using TournamentAssistantShared.BeatSaver;
 using TournamentAssistantShared.Models;
@@ -20,11 +20,89 @@ using TournamentAssistantUI.Misc;
 using TournamentAssistantUI.UI.Forms;
 using TournamentAssistantUI.UI.UserControls;
 using Brushes = System.Windows.Media.Brushes;
-using ComboBox = System.Windows.Controls.ComboBox;
 using Point = System.Windows.Point;
 
 namespace TournamentAssistantUI.UI
 {
+    public class PerPlayerDifficulty : INotifyPropertyChanged
+    {
+        public User User { get; }
+
+        public PerPlayerDifficulty(User user)
+        {
+            User = user ?? throw new ArgumentNullException(nameof(user));
+        }
+
+        #region Difficulties
+        private Constants.BeatmapDifficulty[] difficulties = Array.Empty<Constants.BeatmapDifficulty>();
+        public Constants.BeatmapDifficulty[] Difficulties
+        {
+            get
+            {
+                return difficulties;
+            }
+            set
+            {
+                if (difficulties != value)
+                {
+                    difficulties = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Difficulties)));
+
+                    //this.SelectedDifficulty = difficulties.FirstOrDefault();
+                }
+            }
+        }
+        #endregion
+
+        #region SelectedDifficulty
+        private Constants.BeatmapDifficulty? selectedDifficulty;
+        public Constants.BeatmapDifficulty? SelectedDifficulty
+        {
+            get
+            {
+                return selectedDifficulty;
+            }
+            set
+            {
+                if (selectedDifficulty != value)
+                {
+                    selectedDifficulty = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedDifficulty)));
+
+
+                }
+            }
+        }
+        #endregion
+
+        #region SelectedCharacteristic
+        private Characteristic selectedCharacteristic;
+        public Characteristic SelectedCharacteristic
+        {
+            get
+            {
+                return selectedCharacteristic;
+            }
+            set
+            {
+                if (selectedCharacteristic != value)
+                {
+                    selectedCharacteristic = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedCharacteristic)));
+
+                    Difficulties = selectedCharacteristic?.Difficulties
+                        ?.Select(x => (Constants.BeatmapDifficulty)x)
+                        ?.ToArray()
+                        ?? Array.Empty<Constants.BeatmapDifficulty>();
+                }
+            }
+        }
+        #endregion
+
+
+        public event PropertyChangedEventHandler PropertyChanged;
+    }
+
     /// <summary>
     /// Interaction logic for MatchPage.xaml
     /// </summary>
@@ -42,10 +120,73 @@ namespace TournamentAssistantUI.UI
             }
             set
             {
-                _match = value;
-                Dispatcher.Invoke(() => NotifyPropertyChanged(nameof(Match)));
+                if (_match != value)
+                {
+                    _match = value;
+                    Dispatcher.Invoke(() =>
+                    {
+                        NotifyPropertyChanged(nameof(Match));
+
+                        if (characteristics == null || Match?.SelectedLevel?.Characteristics == null)
+                        {
+                            Characteristics = Match?.SelectedLevel?.Characteristics?.ToArray()
+                                ?? Array.Empty<Characteristic>();
+                        }
+                        else if (!characteristics.SequenceEqual(Match.SelectedLevel.Characteristics, CharacteristicMemberwiseComparer.Instance))
+                        {
+                            Characteristics = Match?.SelectedLevel?.Characteristics?.ToArray()
+                                ?? Array.Empty<Characteristic>();
+                        }
+                    });
+                }
             }
         }
+
+        private class CharacteristicMemberwiseComparer : IEqualityComparer<Characteristic>
+        {
+            public static CharacteristicMemberwiseComparer Instance { get; } = new CharacteristicMemberwiseComparer();
+
+            public bool Equals(Characteristic x, Characteristic y)
+            {
+                if (x.SerializedName != y.SerializedName)
+                {
+                    return false;
+                }
+
+                if (!x.Difficulties.SequenceEqual(y.Difficulties))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
+            public int GetHashCode(Characteristic obj)
+            {
+                return obj?.GetHashCode() ?? 0;
+            }
+        }
+
+        #region PerPlayerDifficultyenabled
+        private bool perPlayerDifficultyEnabled = false;
+        public bool PerPlayerDifficultyEnabled
+        {
+            get
+            {
+                return perPlayerDifficultyEnabled;
+            }
+            set
+            {
+                if (perPlayerDifficultyEnabled != value)
+                {
+                    perPlayerDifficultyEnabled = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PerPlayerDifficultyEnabled)));
+                }
+            }
+        }
+        #endregion
+
+        public PerPlayerDifficulty[] PerPlayerDifficulties { get; } = Array.Empty<PerPlayerDifficulty>();
 
         public string[] AvailableOSTs
         {
@@ -147,7 +288,113 @@ namespace TournamentAssistantUI.UI
             ReturnToMenu = new CommandImplementation(ReturnToMenu_Executed, ReturnToMenu_CanExecute);
             ClosePage = new CommandImplementation(ClosePage_Executed, ClosePage_CanExecute);
             DestroyAndCloseMatch = new CommandImplementation(DestroyAndCloseMatch_Executed, (_) => true);
+
+            PerPlayerDifficulties = GetPlayersInMatch()
+                .Where(x => x.ClientType == User.ClientTypes.Player)
+                .Select(x =>
+                {
+                    var perPlayerDifficulty = new PerPlayerDifficulty(x);
+
+                    perPlayerDifficulty.PropertyChanged += (_, e) =>
+                    {
+                        if (PerPlayerDifficultyEnabled)
+                        {
+                            switch (e.PropertyName)
+                            {
+                                case nameof(PerPlayerDifficulty.SelectedDifficulty):
+                                case nameof(PerPlayerDifficulty.SelectedCharacteristic):
+                                    if (PerPlayerDifficulties.All(x =>
+                                        x.SelectedDifficulty != null &&
+                                        x.SelectedCharacteristic
+                                            ?.Difficulties
+                                            ?.Contains((int)x.SelectedDifficulty.Value) == true))
+                                    {
+                                        SelectedCharacteristic = PerPlayerDifficulties.First().SelectedCharacteristic;
+                                        SelectedDifficulty = (int)PerPlayerDifficulties.First().SelectedDifficulty;
+                                    }
+                                    else
+                                    {
+                                        SelectedCharacteristic = null;
+                                    }
+                                    break;
+                            }
+                        }
+                    };
+
+                    return perPlayerDifficulty;
+                })
+                .ToArray();
         }
+
+        #region Characteristics
+        private Characteristic[] characteristics = Array.Empty<Characteristic>();
+        public Characteristic[] Characteristics
+        {
+            get
+            {
+                return characteristics;
+            }
+            set
+            {
+                if (characteristics != value)
+                {
+                    characteristics = value;
+                    NotifyPropertyChanged(nameof(Characteristics));
+                }
+            }
+        }
+        #endregion
+
+        #region SelectedCharacteristic
+        private Characteristic selectedCharacteristic = null;
+        public Characteristic SelectedCharacteristic
+        {
+            get
+            {
+                return selectedCharacteristic;
+            }
+            set
+            {
+                if (selectedCharacteristic != value)
+                {
+                    selectedCharacteristic = value;
+                    NotifyPropertyChanged(nameof(SelectedCharacteristic));
+
+                    if (Match.SelectedCharacteristic?.SerializedName != value?.SerializedName)
+                    {
+                        Match.SelectedCharacteristic = Match.SelectedLevel.Characteristics.FirstOrDefault(x => x.SerializedName == value?.SerializedName);
+                        _ = MainPage.Client.UpdateMatch(Match);
+                    }
+                }
+            }
+        }
+        #endregion
+
+        #region SelectedDifficulty
+        private int? selectedDifficulty = null;
+        public int? SelectedDifficulty
+
+        {
+            get
+            {
+                return selectedDifficulty;
+            }
+            set
+            {
+                if (selectedDifficulty != value)
+                {
+                    selectedDifficulty = value;
+                    NotifyPropertyChanged(nameof(SelectedDifficulty));
+                    if (selectedDifficulty != null)
+                    {
+                        Match.SelectedDifficulty = selectedDifficulty.Value;
+
+                        _ = MainPage.Client.UpdateMatch(Match);
+                    }
+                }
+            }
+        }
+        #endregion
 
         private User[] GetPlayersInMatch()
         {
@@ -171,7 +418,10 @@ namespace TournamentAssistantUI.UI
                 {
                     await DialogHost.Show(new GameOverDialogTeams(_levelCompletionResults), "RootDialog");
                 }
-                else await DialogHost.Show(new GameOverDialog(_levelCompletionResults), "RootDialog");
+                else
+                {
+                    await DialogHost.Show(new GameOverDialog(_levelCompletionResults), "RootDialog");
+                }
             });
         }
 
@@ -179,15 +429,23 @@ namespace TournamentAssistantUI.UI
         {
             LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run($"{results.Player.Name} has scored {results.Score}\n")));
 
-            if (Match.AssociatedUsers.Contains(results.Player.Guid)) _levelCompletionResults.Add(results);
+            if (Match.AssociatedUsers.Contains(results.Player.Guid))
+            {
+                _levelCompletionResults.Add(results);
+            }
 
             var playersText = string.Empty;
-            foreach (var matchPlayer in GetPlayersInMatch()) playersText += $"{matchPlayer.Name}, ";
+            foreach (var matchPlayer in GetPlayersInMatch())
+            {
+                playersText += $"{matchPlayer.Name}, ";
+            }
+
             Logger.Debug($"{results.Player.Name} FINISHED SONG, FOR A TOTAL OF {_levelCompletionResults.Count} FINISHED PLAYERS OUT OF {GetPlayersInMatch().Count()}");
             if (_levelCompletionResults.Count == GetPlayersInMatch().Count())
             {
                 AllPlayersFinishedSong?.Invoke();
             }
+
             return Task.CompletedTask;
         }
 
@@ -205,8 +463,15 @@ namespace TournamentAssistantUI.UI
                 _matchPlayersHaveDownloadedSong = matchPlayers.All(x => x.DownloadState == User.DownloadStates.Downloaded);
                 _matchPlayersAreInGame = matchPlayers.All(x => x.PlayState == User.PlayStates.InGame);
 
-                if (!oldMatchPlayersHaveDownloadedSong && _matchPlayersHaveDownloadedSong) PlayersDownloadedSong?.Invoke();
-                if (!oldMatchPlayersAreInGame && _matchPlayersAreInGame) PlayersAreInGame?.Invoke();
+                if (!oldMatchPlayersHaveDownloadedSong && _matchPlayersHaveDownloadedSong)
+                {
+                    PlayersDownloadedSong?.Invoke();
+                }
+
+                if (!oldMatchPlayersAreInGame && _matchPlayersAreInGame)
+                {
+                    PlayersAreInGame?.Invoke();
+                }
             }
             return Task.CompletedTask;
         }
@@ -218,7 +483,10 @@ namespace TournamentAssistantUI.UI
                 Match = updatedMatch;
 
                 //If the Match has a song now, be super sure the song box is enabled
-                if (Match.SelectedLevel != null) SongBox.Dispatcher.Invoke(() => SongBox.IsEnabled = true);
+                if (Match.SelectedLevel != null)
+                {
+                    SongBox.Dispatcher.Invoke(() => SongBox.IsEnabled = true);
+                }
             }
             return Task.CompletedTask;
         }
@@ -359,7 +627,7 @@ namespace TournamentAssistantUI.UI
                                     Name = song.Name
                                 };
 
-                                List<Characteristic> characteristics = new List<Characteristic>();
+                                var characteristics = new List<Characteristic>();
                                 foreach (var characteristic in song.Characteristics)
                                 {
                                     var newCharacteristic = new Characteristic()
@@ -385,7 +653,10 @@ namespace TournamentAssistantUI.UI
                                 {
                                     LevelId = Match.SelectedLevel.LevelId,
                                 };
-                                if (!string.IsNullOrWhiteSpace(customHost)) loadSong.CustomHostUrl = customHost;
+                                if (!string.IsNullOrWhiteSpace(customHost))
+                                {
+                                    loadSong.CustomHostUrl = customHost;
+                                }
 
                                 //As of the async refactoring, this *shouldn't* cause problems to not await. It would be very hard to properly use async from a UI event so I'm leaving it like this for now
                                 Task.Run(() =>
@@ -428,13 +699,19 @@ namespace TournamentAssistantUI.UI
 
         private string GetSongIdFromUrl(string url)
         {
-            if (string.IsNullOrEmpty(url)) return null;
+            if (string.IsNullOrEmpty(url))
+            {
+                return null;
+            }
 
             //Sanitize input
             if (url.StartsWith("https://beatsaver.com/") || url.StartsWith("https://bsaber.com/"))
             {
                 //Strip off the trailing slash if there is one
-                if (url.EndsWith("/")) url = url.Substring(0, url.Length - 1);
+                if (url.EndsWith("/"))
+                {
+                    url = url.Substring(0, url.Length - 1);
+                }
 
                 //Strip off the beginning of the url to leave the id
                 url = url.Substring(url.LastIndexOf("/") + 1);
@@ -445,7 +722,10 @@ namespace TournamentAssistantUI.UI
                 url = url.Substring(0, url.IndexOf("&"));
             }
 
-            if (url.EndsWith(".zip")) url = url.Substring(0, url.Length - 4);
+            if (url.EndsWith(".zip"))
+            {
+                url = url.Substring(0, url.Length - 4);
+            }
 
             return url;
         }
@@ -454,7 +734,10 @@ namespace TournamentAssistantUI.UI
         {
             //If not all players are in the waiting room, don't play
             //Aka: don't play if the players are already playing a song
-            if (!GetPlayersInMatch().All(x => x.PlayState == User.PlayStates.Waiting)) return;
+            if (!GetPlayersInMatch().All(x => x.PlayState == User.PlayStates.Waiting))
+            {
+                return;
+            }
 
             await SetUpAndPlaySong();
         }
@@ -468,7 +751,10 @@ namespace TournamentAssistantUI.UI
                 foreach (var player in GetPlayersInMatch())
                 {
                     string bannedMods = string.Join(", ", player.ModLists.Intersect(MainPage.Client.State.ServerSettings.BannedMods));
-                    if (bannedMods != string.Empty) playersWithBannedMods += $"{player.Name}: {bannedMods}\n";
+                    if (bannedMods != string.Empty)
+                    {
+                        playersWithBannedMods += $"{player.Name}: {bannedMods}\n";
+                    }
                 }
 
                 if (playersWithBannedMods != string.Empty)
@@ -478,7 +764,10 @@ namespace TournamentAssistantUI.UI
                         Message = { Text = $"Some players have banned mods:\n{playersWithBannedMods}" }
                     };
 
-                    if (!(bool)await DialogHost.Show(sampleMessageDialog, "RootDialog")) return false;
+                    if (!(bool)await DialogHost.Show(sampleMessageDialog, "RootDialog"))
+                    {
+                        return false;
+                    }
                 }
             }
 
@@ -486,54 +775,207 @@ namespace TournamentAssistantUI.UI
             _levelCompletionResults = new List<Push.SongFinished>();
 
             var gm = new GameplayModifiers();
-            if ((bool)NoFailBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.NoFail;
-            if ((bool)DisappearingArrowsBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.DisappearingArrows;
-            if ((bool)GhostNotesBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.GhostNotes;
-            if ((bool)FastNotesBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.FastNotes;
-            if ((bool)SlowSongBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.SlowSong;
-            if ((bool)FastSongBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.FastSong;
-            if ((bool)SuperFastSongBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.SuperFastSong;
-            if ((bool)InstaFailBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.InstaFail;
-            if ((bool)FailOnSaberClashBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.FailOnClash;
-            if ((bool)BatteryEnergyBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.BatteryEnergy;
-            if ((bool)NoBombsBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.NoBombs;
-            if ((bool)NoWallsBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.NoObstacles;
-            if ((bool)NoArrowsBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.NoArrows;
-            if ((bool)ProModeBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.ProMode;
-            if ((bool)ZenModeBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.ZenMode;
-            if ((bool)SmallCubesBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.SmallCubes;
-            if ((bool)StrictAnglseBox.IsChecked) gm.Options = gm.Options | GameplayModifiers.GameOptions.StrictAngles;
-
-            await SendToPlayers(new Packet
+            if ((bool)NoFailBox.IsChecked)
             {
-                Command = new Command
-                {
-                    play_song = new Command.PlaySong
-                    {
-                        GameplayParameters = new GameplayParameters
-                        {
-                            Beatmap = new Beatmap
-                            {
-                                Characteristic = new Characteristic
-                                {
-                                    SerializedName = Match.SelectedCharacteristic.SerializedName
-                                },
-                                Difficulty = Match.SelectedDifficulty,
-                                LevelId = Match.SelectedLevel.LevelId
-                            },
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.NoFail;
+            }
 
-                            GameplayModifiers = gm,
-                            PlayerSettings = new PlayerSpecificSettings()
+            if ((bool)DisappearingArrowsBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.DisappearingArrows;
+            }
+
+            if ((bool)GhostNotesBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.GhostNotes;
+            }
+
+            if ((bool)FastNotesBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.FastNotes;
+            }
+
+            if ((bool)SlowSongBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.SlowSong;
+            }
+
+            if ((bool)FastSongBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.FastSong;
+            }
+
+            if ((bool)SuperFastSongBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.SuperFastSong;
+            }
+
+            if ((bool)InstaFailBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.InstaFail;
+            }
+
+            if ((bool)FailOnSaberClashBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.FailOnClash;
+            }
+
+            if ((bool)BatteryEnergyBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.BatteryEnergy;
+            }
+
+            if ((bool)NoBombsBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.NoBombs;
+            }
+
+            if ((bool)NoWallsBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.NoObstacles;
+            }
+
+            if ((bool)NoArrowsBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.NoArrows;
+            }
+
+            if ((bool)ProModeBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.ProMode;
+            }
+
+            if ((bool)ZenModeBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.ZenMode;
+            }
+
+            if ((bool)SmallCubesBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.SmallCubes;
+            }
+
+            if ((bool)StrictAnglseBox.IsChecked)
+            {
+                gm.Options = gm.Options | GameplayModifiers.GameOptions.StrictAngles;
+            }
+
+            if (PerPlayerDifficultyEnabled)
+            {
+                foreach (var playerDifficulty in PerPlayerDifficulties)
+                {
+                    var playSong = new Command.PlaySong();
+                    var gameplayParameters = new GameplayParameters
+                    {
+                        Beatmap = new Beatmap
+                        {
+                            Characteristic = new Characteristic
+                            {
+                                SerializedName = playerDifficulty.SelectedCharacteristic.SerializedName,
+                            },
+                            Difficulty = (int)playerDifficulty.SelectedDifficulty,
+                            LevelId = Match.SelectedLevel.LevelId
                         },
-                        FloatingScoreboard = (bool)ScoreboardBox.IsChecked,
-                        StreamSync = useSync,
-                        DisableFail = (bool)DisableFailBox.IsChecked,
-                        DisablePause = (bool)DisablePauseBox.IsChecked,
-                        DisableScoresaberSubmission = (bool)DisableScoresaberBox.IsChecked,
-                        ShowNormalNotesOnStream = (bool)ShowNormalNotesBox.IsChecked
+
+                        GameplayModifiers = gm,
+                        PlayerSettings = new PlayerSpecificSettings()
+                    };
+
+                    gameplayParameters.GameplayModifiers = gm;
+                    gameplayParameters.PlayerSettings = new PlayerSpecificSettings();
+
+                    playSong.GameplayParameters = gameplayParameters;
+                    playSong.FloatingScoreboard = (bool)ScoreboardBox.IsChecked;
+                    playSong.StreamSync = useSync;
+                    playSong.DisableFail = (bool)DisableFailBox.IsChecked;
+                    playSong.DisablePause = (bool)DisablePauseBox.IsChecked;
+                    playSong.DisableScoresaberSubmission = (bool)DisableScoresaberBox.IsChecked;
+                    playSong.ShowNormalNotesOnStream = (bool)ShowNormalNotesBox.IsChecked;
+
+                    // In stream sync, the actual song start time is determined by the DelayTest_Finish command, so we do this again there
+                    if (!useSync)
+                    {
+                        // add seconds to account for loading into the map
+                        Match.StartTime = DateTime.UtcNow.AddSeconds(2).ToString("yyyy-MM-ddTHH\\:mm\\:ss.fffffffZZZ");
+                        await MainPage.Client.UpdateMatch(Match);
                     }
+
+                    await SendToPlayer(Guid.Parse(playerDifficulty.User.Guid), new Packet
+                    {
+                        Command = new Command
+                        {
+                            play_song = playSong,
+                        },
+                    });
                 }
-            });
+            }
+            else
+            {
+                var playSong = new Command.PlaySong();
+                var gameplayParameters = new GameplayParameters
+                {
+                    Beatmap = new Beatmap
+                    {
+                        Characteristic = new Characteristic
+                        {
+                            SerializedName = Match.SelectedCharacteristic.SerializedName
+                        },
+                        Difficulty = Match.SelectedDifficulty,
+                        LevelId = Match.SelectedLevel.LevelId
+                    },
+                };
+
+                await SendToPlayers(new Packet
+                {
+                    Command = new Command
+                    {
+                        play_song = new Command.PlaySong
+                        {
+                            GameplayParameters = new GameplayParameters
+                            {
+                                Beatmap = new Beatmap
+                                {
+                                    Characteristic = new Characteristic
+                                    {
+                                        SerializedName = Match.SelectedCharacteristic.SerializedName
+                                    },
+                                    Difficulty = Match.SelectedDifficulty,
+                                    LevelId = Match.SelectedLevel.LevelId
+                                },
+                                GameplayModifiers = gm,
+                                PlayerSettings = new PlayerSpecificSettings()
+                            },
+                        },
+                    }
+                });
+
+                gameplayParameters.GameplayModifiers = gm;
+                gameplayParameters.PlayerSettings = new PlayerSpecificSettings();
+
+                playSong.GameplayParameters = gameplayParameters;
+                playSong.FloatingScoreboard = (bool)ScoreboardBox.IsChecked;
+                playSong.StreamSync = useSync;
+                playSong.DisableFail = (bool)DisableFailBox.IsChecked;
+                playSong.DisablePause = (bool)DisablePauseBox.IsChecked;
+                playSong.DisableScoresaberSubmission = (bool)DisableScoresaberBox.IsChecked;
+                playSong.ShowNormalNotesOnStream = (bool)ShowNormalNotesBox.IsChecked;
+
+                // In stream sync, the actual song start time is determined by the DelayTest_Finish command, so we do this again there
+                if (!useSync)
+                {
+                    // add seconds to account for loading into the map
+                    Match.StartTime = DateTime.UtcNow.AddSeconds(2).ToString("yyyy-MM-ddTHH\\:mm\\:ss.fffffffzzz");
+                    await MainPage.Client.UpdateMatch(Match);
+                }
+
+                await SendToPlayers(new Packet
+                {
+                    Command = new Command
+                    {
+                        play_song = playSong,
+                    }
+                });
+            }
 
             return true;
         }
@@ -542,18 +984,29 @@ namespace TournamentAssistantUI.UI
         {
             //If not all players are in the waiting room, don't play
             //Aka: don't play if the players are already playing a song
-            if (!GetPlayersInMatch().All(x => x.PlayState == User.PlayStates.Waiting)) return;
+            if (!GetPlayersInMatch().All(x => x.PlayState == User.PlayStates.Waiting))
+            {
+                return;
+            }
 
-            if (await SetUpAndPlaySong(true)) PlayersAreInGame += DoDualSync;
+            if (await SetUpAndPlaySong(true))
+            {
+                PlayersAreInGame += DoDualSync;
+            }
         }
 
         private async void PlaySongWithDelayedStart_Executed(object obj)
         {
             //If not all players are in the waiting room, don't play
             //Aka: don't play if the players are already playing a song
-            if (!GetPlayersInMatch().All(x => x.PlayState == User.PlayStates.Waiting)) return;
+            if (!GetPlayersInMatch().All(x => x.PlayState == User.PlayStates.Waiting))
+            {
+                return;
+            }
 
-            if (await SetUpAndPlaySong(true)) PlayersAreInGame += async () =>
+            if (await SetUpAndPlaySong(true))
+            {
+                PlayersAreInGame += async () =>
             {
                 await Task.Delay(5000);
 
@@ -570,6 +1023,7 @@ namespace TournamentAssistantUI.UI
                     }
                 });
             };
+            }
         }
 
         private Task DoDualSync()
@@ -598,7 +1052,8 @@ namespace TournamentAssistantUI.UI
                 {
                     var players = GetPlayersInMatch().ToArray();
                     Logger.Debug("LOCATED ALL PLAYERS");
-                    LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run("Players located. Waiting for green screen...\n") { Foreground = Brushes.Yellow })); ;
+                    LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run("Players located. Waiting for green screen...\n") { Foreground = Brushes.Yellow }));
+                    ;
 
                     //Wait for players to download the green file
                     List<Guid> _playersWhoHaveDownloadedGreenImage = new List<Guid>();
@@ -607,7 +1062,11 @@ namespace TournamentAssistantUI.UI
 
                     Func<Response.ImagePreloaded, Guid, Task> greenImagePreloaded = (Response.ImagePreloaded a, Guid from) =>
                     {
-                        if (players.Select(x => x.Guid).Contains(from.ToString())) _playersWhoHaveDownloadedGreenImage.Add(from);
+                        if (players.Select(x => x.Guid).Contains(from.ToString()))
+                        {
+                            _playersWhoHaveDownloadedGreenImage.Add(from);
+                        }
+
                         return Task.CompletedTask;
                     };
                     MainPage.Client.ImagePreloaded += greenImagePreloaded;
@@ -628,7 +1087,10 @@ namespace TournamentAssistantUI.UI
                     }
 
                     //TODO: Use proper waiting
-                    while (!_syncCancellationToken.Token.IsCancellationRequested && !players.Select(x => x.Guid).All(x => _playersWhoHaveDownloadedGreenImage.Contains(Guid.Parse(x)))) await Task.Delay(0);
+                    while (!_syncCancellationToken.Token.IsCancellationRequested && !players.Select(x => x.Guid).All(x => _playersWhoHaveDownloadedGreenImage.Contains(Guid.Parse(x))))
+                    {
+                        await Task.Delay(0);
+                    }
 
                     //If a player failed to download the background, bail            
                     MainPage.Client.ImagePreloaded -= greenImagePreloaded;
@@ -636,10 +1098,14 @@ namespace TournamentAssistantUI.UI
                     {
                         var missingLog = string.Empty;
                         var missing = players.Where(x => !_playersWhoHaveDownloadedGreenImage.Contains(Guid.Parse(x.Guid))).Select(x => x.Name);
-                        foreach (var missingPerson in missing) missingLog += $"{missingPerson}, ";
+                        foreach (var missingPerson in missing)
+                        {
+                            missingLog += $"{missingPerson}, ";
+                        }
 
                         Logger.Error($"{missingLog} failed to download a sync image, bailing out of stream sync...");
-                        LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run($"{missingLog} failed to download a sync image, bailing out of stream sync...\n") { Foreground = Brushes.Red })); ;
+                        LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run($"{missingLog} failed to download a sync image, bailing out of stream sync...\n") { Foreground = Brushes.Red }));
+                        ;
 
                         await allPlayersSynced(false);
 
@@ -661,7 +1127,8 @@ namespace TournamentAssistantUI.UI
                         {
                             players[playerId].StreamDelayMs = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) - players[playerId].StreamSyncStartMs;
 
-                            LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run($"DETECTED: {players[playerId].Name} (delay: {players[playerId].StreamDelayMs})\n") { Foreground = Brushes.YellowGreen })); ;
+                            LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run($"DETECTED: {players[playerId].Name} (delay: {players[playerId].StreamDelayMs})\n") { Foreground = Brushes.YellowGreen }));
+                            ;
 
                             //Send updated delay info
                             //As of the async refactoring, this *shouldn't* cause problems to not await. It would be very hard to properly use async from a UI event so I'm leaving it like this for now
@@ -669,7 +1136,8 @@ namespace TournamentAssistantUI.UI
 
                             if (players.All(x => x.StreamDelayMs > 0))
                             {
-                                LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run("All players successfully synced. Sending PlaySong\n") { Foreground = Brushes.Green })); ;
+                                LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run("All players successfully synced. Sending PlaySong\n") { Foreground = Brushes.Green }));
+                                ;
                                 allPlayersSynced.Invoke(true);
                             }
                         }));
@@ -697,7 +1165,8 @@ namespace TournamentAssistantUI.UI
                 {
                     //If the qr scanning failed, bail and just play the song
                     Logger.Warning("Failed to locate all players on screen. Playing song without sync");
-                    LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run("Failed to locate all players on screen. Playing song without sync\n") { Foreground = Brushes.Red })); ;
+                    LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run("Failed to locate all players on screen. Playing song without sync\n") { Foreground = Brushes.Red }));
+                    ;
                     await allPlayersSynced(false);
                 }
             };
@@ -723,7 +1192,10 @@ namespace TournamentAssistantUI.UI
                         foreach (var result in returnedResults)
                         {
                             var player = players.FirstOrDefault(x => Hashing.CreateSha1FromString($"Nice try. ;) https://scoresaber.com/u/{x.UserId} {Match.Guid}") == result.Text);
-                            if (player == null) continue;
+                            if (player == null)
+                            {
+                                continue;
+                            }
 
                             Logger.Debug($"{player.Name} QR DETECTED");
                             var point = new User.Point
@@ -737,7 +1209,11 @@ namespace TournamentAssistantUI.UI
                         //Logging
                         var missing = players.Where(x => x.StreamScreenCoordinates == null).Select(x => x.Name);
                         var missingLog = "Can't see QR for: ";
-                        foreach (var missingPerson in missing) missingLog += $"{missingPerson}, ";
+                        foreach (var missingPerson in missing)
+                        {
+                            missingLog += $"{missingPerson}, ";
+                        }
+
                         LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run(missingLog + "\n") { Foreground = Brushes.Yellow }));
                     }
                 }
@@ -755,7 +1231,11 @@ namespace TournamentAssistantUI.UI
 
                 Func<Response.ImagePreloaded, Guid, Task> qrImagePreloaded = (Response.ImagePreloaded a, Guid from) =>
                 {
-                    if (players.Select(x => x.Guid).Contains(from.ToString())) _playersWhoHaveDownloadedQrImage.Add(from);
+                    if (players.Select(x => x.Guid).Contains(from.ToString()))
+                    {
+                        _playersWhoHaveDownloadedQrImage.Add(from);
+                    }
+
                     return Task.CompletedTask;
                 };
                 MainPage.Client.ImagePreloaded += qrImagePreloaded;
@@ -783,7 +1263,10 @@ namespace TournamentAssistantUI.UI
                     );
                 }
 
-                while (!_syncCancellationToken.Token.IsCancellationRequested && !players.Select(x => x.Guid).All(x => _playersWhoHaveDownloadedQrImage.Contains(Guid.Parse(x)))) await Task.Delay(0);
+                while (!_syncCancellationToken.Token.IsCancellationRequested && !players.Select(x => x.Guid).All(x => _playersWhoHaveDownloadedQrImage.Contains(Guid.Parse(x))))
+                {
+                    await Task.Delay(0);
+                }
 
                 //If a player failed to download the background, bail            
                 MainPage.Client.ImagePreloaded -= qrImagePreloaded;
@@ -791,10 +1274,14 @@ namespace TournamentAssistantUI.UI
                 {
                     var missingLog = string.Empty;
                     var missing = players.Where(x => !_playersWhoHaveDownloadedQrImage.Contains(Guid.Parse(x.Guid))).Select(x => x.Name);
-                    foreach (var missingPerson in missing) missingLog += $"{missingPerson}, ";
+                    foreach (var missingPerson in missing)
+                    {
+                        missingLog += $"{missingPerson}, ";
+                    }
 
                     Logger.Error($"{missingLog} failed to download a sync image, bailing out of stream sync...");
-                    LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run($"{missingLog} failed to download a sync image, bailing out of stream sync...\n") { Foreground = Brushes.Red })); ;
+                    LogBlock.Dispatcher.Invoke(() => LogBlock.Inlines.Add(new Run($"{missingLog} failed to download a sync image, bailing out of stream sync...\n") { Foreground = Brushes.Red }));
+                    ;
 
                     // add seconds to account for loading into the map
                     Match.StartTime = DateTime.UtcNow.ToString("yyyy-MM-ddTHH\\:mm\\:ss.fffffffZZZ");
@@ -875,7 +1362,10 @@ namespace TournamentAssistantUI.UI
                 foreach (var player in GetPlayersInMatch())
                 {
                     string bannedMods = string.Join(", ", player.ModLists.Intersect(MainPage.Client.State.ServerSettings.BannedMods));
-                    if (bannedMods != string.Empty) playersWithBannedMods += $"{player.Name}: {bannedMods}\n";
+                    if (bannedMods != string.Empty)
+                    {
+                        playersWithBannedMods += $"{player.Name}: {bannedMods}\n";
+                    }
                 }
 
                 if (playersWithBannedMods != string.Empty)
@@ -907,7 +1397,10 @@ namespace TournamentAssistantUI.UI
 
         private void DestroyAndCloseMatch_Executed(object obj)
         {
-            if (MainPage.DestroyMatch.CanExecute(Match)) MainPage.DestroyMatch.Execute(Match);
+            if (MainPage.DestroyMatch.CanExecute(Match))
+            {
+                MainPage.DestroyMatch.Execute(Match);
+            }
         }
 
         private void ClosePage_Executed(object obj)
@@ -915,7 +1408,7 @@ namespace TournamentAssistantUI.UI
             MainPage.Client.MatchInfoUpdated -= Connection_MatchInfoUpdated;
             MainPage.Client.MatchDeleted -= Connection_MatchDeleted;
             MainPage.Client.PlayerFinishedSong -= Connection_PlayerFinishedSong;
-            MainPage.Client.UserInfoUpdated-= Connection_UserInfoUpdated;
+            MainPage.Client.UserInfoUpdated -= Connection_UserInfoUpdated;
 
             var navigationService = NavigationService.GetNavigationService(this);
             navigationService.GoBack();
@@ -926,46 +1419,70 @@ namespace TournamentAssistantUI.UI
             return (MainPage.Client.Self.Guid == Guid.Empty.ToString() || MainPage.Client.Self.Name == "Moon" || MainPage.Client.Self.Name == "Olaf");
         }
 
-        private async void CharacteristicBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        //private async void CharacteristicBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        //{
+        //    if ((sender as ComboBox).SelectedItem != null)
+        //    {
+        //        var oldCharacteristic = this.Match.SelectedCharacteristic?.SerializedName;
+
+        //        this.Match.SelectedCharacteristic = this.Match.SelectedLevel.Characteristics.First(x => x.SerializedName == (string)(sender as ComboBox).SelectedItem);
+
+        //        //When we update the match, we actually get back an UpdateMatch event which causes this very same event again...
+        //        //Usually I handle this infinite recursion by letting the Events control all the user controls, but that's
+        //        //not possible in this case. So here, we're specifically not going to send an UpdateMatch event if
+        //        //nothing changed because of the selection. It's hacky, and doesn't prevent *all* of the technically excess events
+        //        //from being sent, but it works, so it's here.
+        //        if (this.Match.SelectedCharacteristic.SerializedName != oldCharacteristic)
+        //        {
+        //            await this.MainPage.Client.UpdateMatch(this.Match);
+        //        }
+
+        //        this.NotifyPropertyChanged(nameof(this.Match));
+        //    }
+        //}
+
+        //private async void DifficultyDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        //{
+        //    if (this.DifficultyDropdown.SelectedItem != null)
+        //    {
+        //        var oldDifficulty = this.Match.SelectedDifficulty;
+
+        //        this.Match.SelectedDifficulty = this.Match.SelectedCharacteristic.Difficulties.First(x => ((Constants.BeatmapDifficulty)x).ToString() == this.DifficultyDropdown.SelectedItem.ToString());
+
+        //        //When we update the match, we actually get back an UpdateMatch event which causes this very same event again...
+        //        //Usually I handle this infinite recursion by letting the Events control all the user controls, but that's
+        //        //not possible in this case. So here, we're specifically not going to send an UpdateMatch event if
+        //        //nothing changed because of the selection. It's hacky, and doesn't prevent *all* of the technically excess events
+        //        //from being sent, but it works, so it's here.
+        //        if (this.Match.SelectedDifficulty != oldDifficulty)
+        //        {
+        //            await this.MainPage.Client.UpdateMatch(this.Match);
+        //        }
+
+        //        this.NotifyPropertyChanged(nameof(this.Match));
+        //    }
+        //}
+
+        private async Task SendToPlayer(Guid playerId, Packet packet)
         {
-            if ((sender as ComboBox).SelectedItem != null)
+            var playersText = string.Empty;
+            foreach (var player in GetPlayersInMatch())
             {
-                var oldCharacteristic = Match.SelectedCharacteristic?.SerializedName;
-
-                Match.SelectedCharacteristic = Match.SelectedLevel.Characteristics.First(x => x.SerializedName == (string)(sender as ComboBox).SelectedItem);
-
-                //When we update the match, we actually get back an UpdateMatch event which causes this very same event again...
-                //Usually I handle this infinite recursion by letting the Events control all the user controls, but that's
-                //not possible in this case. So here, we're specifically not going to send an UpdateMatch event if
-                //nothing changed because of the selection. It's hacky, and doesn't prevent *all* of the technically excess events
-                //from being sent, but it works, so it's here.
-                if (Match.SelectedCharacteristic.SerializedName != oldCharacteristic) await MainPage.Client.UpdateMatch(Match);
-                NotifyPropertyChanged(nameof(Match));
+                playersText += $"{player.Name}, ";
             }
-        }
 
-        private async void DifficultyDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (DifficultyDropdown.SelectedItem != null)
-            {
-                var oldDifficulty = Match.SelectedDifficulty;
-
-                Match.SelectedDifficulty = Match.SelectedCharacteristic.Difficulties.First(x => ((Constants.BeatmapDifficulty)x).ToString() == DifficultyDropdown.SelectedItem.ToString());
-
-                //When we update the match, we actually get back an UpdateMatch event which causes this very same event again...
-                //Usually I handle this infinite recursion by letting the Events control all the user controls, but that's
-                //not possible in this case. So here, we're specifically not going to send an UpdateMatch event if
-                //nothing changed because of the selection. It's hacky, and doesn't prevent *all* of the technically excess events
-                //from being sent, but it works, so it's here.
-                if (Match.SelectedDifficulty != oldDifficulty) await MainPage.Client.UpdateMatch(Match);
-                NotifyPropertyChanged(nameof(Match));
-            }
+            Logger.Debug($"Sending {packet.packetCase} to {playersText}");
+            await MainPage.Client.Send(GetPlayersInMatch().Select(x => Guid.Parse(x.Guid)).ToArray(), packet);
         }
 
         private async Task SendToPlayers(Packet packet)
         {
             var playersText = string.Empty;
-            foreach (var player in GetPlayersInMatch()) playersText += $"{player.Name}, ";
+            foreach (var player in GetPlayersInMatch())
+            {
+                playersText += $"{player.Name}, ";
+            }
+
             Logger.Debug($"Sending {packet.packetCase} to {playersText}");
             await MainPage.Client.Send(GetPlayersInMatch().Select(x => Guid.Parse(x.Guid)).ToArray(), packet);
         }
@@ -987,4 +1504,71 @@ namespace TournamentAssistantUI.UI
             }
         }
     }
+}
+
+public static class MatchExtensions
+{
+    //public static bool MemberwiseEquals(
+    //    this Match match,
+    //    Match other)
+    //{
+    //    var equals = false;
+
+    //    equals &= match.Guid == other.Guid;
+    //    equals &= match.SelectedDifficulty == other.SelectedDifficulty;
+    //    equals &= match.StartTime == other.StartTime;
+
+    //    return equals;
+    //}
+
+    //public static bool MemberwiseEquals(
+    //    this List<User> list,
+    //    List<User> other)
+    //{
+    //    if (list.Count == other.Count)
+    //    {
+    //        for (var i = 0; i < list.Count; i++)
+    //        {
+    //            if(
+    //        }
+    //    }
+    //}
+
+    //public static bool MemberwiseEquals(
+    //    this User user,
+    //    User other)
+    //{
+    //    var equals = false;
+
+    //    equals &= user..Guid == other.Guid;
+    //    equals &= match.SelectedDifficulty == other.SelectedDifficulty;
+    //    equals &= match.StartTime == other.StartTime;
+
+    //    return equals;
+    //}
+    //public static bool CopyFrom(
+    //    this Match match,
+    //    Match other)
+    //{
+    //    var mem
+    //    var changed = false;
+
+    //    if (match.Guid != other.Guid) {
+    //        match.Guid = other.Guid
+    //    }
+    //    if(match.SelectedLevel != other.SelectedCharacteristic
+    //}
+
+    //public static bool CopyToIfChanged<T>(
+    //    this T source,
+    //    ref T target)
+    //{
+    //    if (!Object.Equals(target, source))
+    //    {
+    //        target = source;
+    //        return true;
+    //    }
+
+    //    return false;
+    //}
 }
