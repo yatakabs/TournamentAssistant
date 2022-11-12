@@ -280,7 +280,12 @@
                                                     <RowDefinition />
                                                     <RowDefinition />
                                                 </Grid.RowDefinitions>
-                                                <CheckBox x:Name="NoFailBox" Margin="8,0">No Fail</CheckBox>
+                                                <CheckBox
+                                                    x:Name="NoFailBox"
+                                                    Margin="8,0"
+                                                    IsChecked="True">
+                                                    No Fail
+                                                </CheckBox>
                                                 <CheckBox
                                                     x:Name="GhostNotesBox"
                                                     Grid.Row="1"

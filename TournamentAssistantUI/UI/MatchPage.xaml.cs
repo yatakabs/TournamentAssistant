@@ -864,67 +864,42 @@ namespace TournamentAssistantUI.UI
             {
                 foreach (var playerDifficulty in PerPlayerDifficulties)
                 {
-                    var playSong = new Command.PlaySong();
-                    var gameplayParameters = new GameplayParameters
-                    {
-                        Beatmap = new Beatmap
+                    await SendToPlayer(
+                        Guid.Parse(playerDifficulty.User.Guid),
+                        new Packet
                         {
-                            Characteristic = new Characteristic
+                            Command = new Command
                             {
-                                SerializedName = playerDifficulty.SelectedCharacteristic.SerializedName,
+                                play_song = new Command.PlaySong()
+                                {
+                                    GameplayParameters = new GameplayParameters
+                                    {
+                                        Beatmap = new Beatmap
+                                        {
+                                            Characteristic = new Characteristic
+                                            {
+                                                SerializedName = playerDifficulty.SelectedCharacteristic.SerializedName,
+                                            },
+                                            Difficulty = (int)playerDifficulty.SelectedDifficulty,
+                                            LevelId = Match.SelectedLevel.LevelId
+                                        },
+
+                                        GameplayModifiers = gm,
+                                        PlayerSettings = new PlayerSpecificSettings(),
+                                    },
+                                    FloatingScoreboard = (bool)ScoreboardBox.IsChecked,
+                                    StreamSync = useSync,
+                                    DisableFail = (bool)DisableFailBox.IsChecked,
+                                    DisablePause = (bool)DisablePauseBox.IsChecked,
+                                    DisableScoresaberSubmission = (bool)DisableScoresaberBox.IsChecked,
+                                    ShowNormalNotesOnStream = (bool)ShowNormalNotesBox.IsChecked
+                                }
                             },
-                            Difficulty = (int)playerDifficulty.SelectedDifficulty,
-                            LevelId = Match.SelectedLevel.LevelId
-                        },
-
-                        GameplayModifiers = gm,
-                        PlayerSettings = new PlayerSpecificSettings()
-                    };
-
-                    gameplayParameters.GameplayModifiers = gm;
-                    gameplayParameters.PlayerSettings = new PlayerSpecificSettings();
-
-                    playSong.GameplayParameters = gameplayParameters;
-                    playSong.FloatingScoreboard = (bool)ScoreboardBox.IsChecked;
-                    playSong.StreamSync = useSync;
-                    playSong.DisableFail = (bool)DisableFailBox.IsChecked;
-                    playSong.DisablePause = (bool)DisablePauseBox.IsChecked;
-                    playSong.DisableScoresaberSubmission = (bool)DisableScoresaberBox.IsChecked;
-                    playSong.ShowNormalNotesOnStream = (bool)ShowNormalNotesBox.IsChecked;
-
-                    // In stream sync, the actual song start time is determined by the DelayTest_Finish command, so we do this again there
-                    if (!useSync)
-                    {
-                        // add seconds to account for loading into the map
-                        Match.StartTime = DateTime.UtcNow.AddSeconds(2).ToString("yyyy-MM-ddTHH\\:mm\\:ss.fffffffZZZ");
-                        await MainPage.Client.UpdateMatch(Match);
-                    }
-
-                    await SendToPlayer(Guid.Parse(playerDifficulty.User.Guid), new Packet
-                    {
-                        Command = new Command
-                        {
-                            play_song = playSong,
-                        },
-                    });
+                        });
                 }
             }
             else
             {
-                var playSong = new Command.PlaySong();
-                var gameplayParameters = new GameplayParameters
-                {
-                    Beatmap = new Beatmap
-                    {
-                        Characteristic = new Characteristic
-                        {
-                            SerializedName = Match.SelectedCharacteristic.SerializedName
-                        },
-                        Difficulty = Match.SelectedDifficulty,
-                        LevelId = Match.SelectedLevel.LevelId
-                    },
-                };
-
                 await SendToPlayers(new Packet
                 {
                     Command = new Command
@@ -942,37 +917,17 @@ namespace TournamentAssistantUI.UI
                                     Difficulty = Match.SelectedDifficulty,
                                     LevelId = Match.SelectedLevel.LevelId
                                 },
+
                                 GameplayModifiers = gm,
                                 PlayerSettings = new PlayerSpecificSettings()
                             },
-                        },
-                    }
-                });
-
-                gameplayParameters.GameplayModifiers = gm;
-                gameplayParameters.PlayerSettings = new PlayerSpecificSettings();
-
-                playSong.GameplayParameters = gameplayParameters;
-                playSong.FloatingScoreboard = (bool)ScoreboardBox.IsChecked;
-                playSong.StreamSync = useSync;
-                playSong.DisableFail = (bool)DisableFailBox.IsChecked;
-                playSong.DisablePause = (bool)DisablePauseBox.IsChecked;
-                playSong.DisableScoresaberSubmission = (bool)DisableScoresaberBox.IsChecked;
-                playSong.ShowNormalNotesOnStream = (bool)ShowNormalNotesBox.IsChecked;
-
-                // In stream sync, the actual song start time is determined by the DelayTest_Finish command, so we do this again there
-                if (!useSync)
-                {
-                    // add seconds to account for loading into the map
-                    Match.StartTime = DateTime.UtcNow.AddSeconds(2).ToString("yyyy-MM-ddTHH\\:mm\\:ss.fffffffzzz");
-                    await MainPage.Client.UpdateMatch(Match);
-                }
-
-                await SendToPlayers(new Packet
-                {
-                    Command = new Command
-                    {
-                        play_song = playSong,
+                            FloatingScoreboard = (bool)ScoreboardBox.IsChecked,
+                            StreamSync = useSync,
+                            DisableFail = (bool)DisableFailBox.IsChecked,
+                            DisablePause = (bool)DisablePauseBox.IsChecked,
+                            DisableScoresaberSubmission = (bool)DisableScoresaberBox.IsChecked,
+                            ShowNormalNotesOnStream = (bool)ShowNormalNotesBox.IsChecked
+                        }
                     }
                 });
             }
@@ -1465,14 +1420,13 @@ namespace TournamentAssistantUI.UI
 
         private async Task SendToPlayer(Guid playerId, Packet packet)
         {
-            var playersText = string.Empty;
-            foreach (var player in GetPlayersInMatch())
-            {
-                playersText += $"{player.Name}, ";
-            }
+            var playersText = GetPlayersInMatch()
+                .FirstOrDefault(x => x.Guid == playerId.ToString())
+                ?.Name
+                ?? "N/A";
 
             Logger.Debug($"Sending {packet.packetCase} to {playersText}");
-            await MainPage.Client.Send(GetPlayersInMatch().Select(x => Guid.Parse(x.Guid)).ToArray(), packet);
+            await MainPage.Client.Send(playerId, packet);
         }
 
         private async Task SendToPlayers(Packet packet)
