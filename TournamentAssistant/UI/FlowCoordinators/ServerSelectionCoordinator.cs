@@ -72,7 +72,25 @@ namespace TournamentAssistant.UI.FlowCoordinators
             _serverSelectionViewController = BeatSaberUI.CreateViewController<ServerSelection>();
             _serverSelectionViewController.ServerSelected += ConnectToServer;
             _IPConnectionViewController.ServerSelected += ConnectToServer;
-            _serverSelectionViewController.SetServers(ScrapedInfo.Keys.Union(ScrapedInfo.Values.Where(x => x.KnownHosts != null).SelectMany(x => x.KnownHosts), new CoreServerEqualityComparer()).ToList());
+            var jbslServer1 = new CoreServer
+            {
+                Address = "jbsl-ta1.yatakabs.com",
+                Port = 2052,
+                Name = "JBSL 4 - Room 1",
+            };
+            var jbslServer2 = new CoreServer
+            {
+                Address = "jbsl-ta2.yatakabs.com",
+                Port = 2052,
+                Name = "JBSL 4 - Room 2",
+            };
+
+            _serverSelectionViewController.SetServers(
+                new CoreServer[]{
+                    jbslServer1,
+                    jbslServer2,
+                }
+                .Concat(ScrapedInfo.Keys.Union(ScrapedInfo.Values.Where(x => x.KnownHosts != null).SelectMany(x => x.KnownHosts), new CoreServerEqualityComparer())).ToList());
             PresentViewController(_serverSelectionViewController);
         }
 
