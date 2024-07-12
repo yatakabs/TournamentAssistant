@@ -19,11 +19,25 @@ namespace TournamentAssistantUI.UI.Converters
             {
                 return (value as int[]).Select(x => (Constants.BeatmapDifficulty)x).ToList();
             }
+            else if (value is int intVaule)
+            {
+                return (Constants.BeatmapDifficulty)intVaule;
+            }
+
             return value;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         {
+            if (value is Constants.BeatmapDifficulty enumValue)
+            {
+                return (int)enumValue;
+            }
+            else if (value is null)
+            {
+                return null;
+            }
+
             return (int)Enum.Parse(typeof(Constants.BeatmapDifficulty), value.ToString());
         }
     }

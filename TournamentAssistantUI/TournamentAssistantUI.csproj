@@ -28,7 +28,7 @@
     <UpdatePeriodically>false</UpdatePeriodically>
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
-    <ApplicationRevision>4</ApplicationRevision>
+    <ApplicationRevision>6</ApplicationRevision>
     <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <PublishWizardCompleted>true</PublishWizardCompleted>
@@ -337,6 +337,7 @@
       <Private>True</Private>
     </Reference>
     <Reference Include="System.Security" />
+    <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Text.Encodings.Web, Version=4.0.5.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Text.Encodings.Web.4.7.1\lib\net461\System.Text.Encodings.Web.dll</HintPath>
     </Reference>
@@ -386,6 +387,7 @@
     <Compile Include="Misc\QRUtils.cs" />
     <Compile Include="Misc\ScoreboardClient.cs" />
     <Compile Include="Misc\WinConsole.cs" />
+    <Compile Include="UI\Converters\BoolConverters.cs" />
     <Compile Include="UI\Converters\CharacteristicConverter.cs" />
     <Compile Include="UI\Converters\DifficultyEnumConverter.cs" />
     <Compile Include="UI\Converters\SubstringConverter.cs" />

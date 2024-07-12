@@ -4,10 +4,12 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using TournamentAssistantShared;
 using UnityEngine;
+using UnityEngine.Windows.WebCam;
 using Logger = TournamentAssistantShared.Logger;
 
 namespace TournamentAssistant.Utilities
@@ -172,10 +174,31 @@ new Pack
 
         public static async void PlaySong(IPreviewBeatmapLevel level, BeatmapCharacteristicSO characteristic, BeatmapDifficulty difficulty, OverrideEnvironmentSettings overrideEnvironmentSettings = null, ColorScheme colorScheme = null, GameplayModifiers gameplayModifiers = null, PlayerSpecificSettings playerSettings = null, Action<StandardLevelScenesTransitionSetupDataSO, LevelCompletionResults> songFinishedCallback = null)
         {
-            Action<IBeatmapLevel> SongLoaded = (loadedLevel) =>
+            var startStandardLevelMethodOverloads = typeof(MenuTransitionsHelper)
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(x => x.Name == nameof(MenuTransitionsHelper.StartStandardLevel))
+                .Select(x => new
+                {
+                    Method = x,
+                    Parameters = x.GetParameters(),
+                })
+                .OrderByDescending(x => x.Parameters.Length)
+                .ToArray();
+
+            var startStandardLevelMethod = 
+                (startStandardLevelMethodOverloads
+                    .FirstOrDefault(x => x.Parameters.Last().Name == "levelRestartedCallback") // 1.25.* - 
+                    ?? startStandardLevelMethodOverloads
+                        .FirstOrDefault(x => x.Parameters.Length == 14) // 1.22.* - 1.24.*
+                    ?? startStandardLevelMethodOverloads
+                        .FirstOrDefault()) // Unknown version
+                .Method;
+
+            Action <IBeatmapLevel> SongLoaded = (loadedLevel) =>
             {
                 MenuTransitionsHelper _menuSceneSetupData = Resources.FindObjectsOfTypeAll<MenuTransitionsHelper>().First();
-                _menuSceneSetupData.StartStandardLevel(
+
+                var parameters = new object[]{
                     "Solo",
                     loadedLevel.beatmapLevelData.GetDifficultyBeatmap(characteristic, difficulty),
                     loadedLevel,
@@ -188,9 +211,36 @@ new Pack
                     false,
                     false,  /* TODO: start paused? Worth looking into to replace the old hacky function */
                     null,
-                    (standardLevelScenesTransitionSetupData, results) => songFinishedCallback?.Invoke(standardLevelScenesTransitionSetupData, results),
+                    null,
+                    (StandardLevelScenesTransitionSetupDataSO standardLevelScenesTransitionSetupData, LevelCompletionResults results) => {
+                        songFinishedCallback?.Invoke(standardLevelScenesTransitionSetupData, results);
+                    },
                     null
-                );
+                 };
+
+                startStandardLevelMethod.Invoke(
+                    _menuSceneSetupData,
+                    parameters
+                        .Take(startStandardLevelMethod.GetParameters().Length)
+                        .ToArray());
+
+
+                //_menuSceneSetupData.StartStandardLevel(
+                //    gameMode: "Solo",
+                //    difficultyBeatmap: loadedLevel.beatmapLevelData.GetDifficultyBeatmap(characteristic, difficulty),
+                //    previewBeatmapLevel: loadedLevel,
+                //    overrideEnvironmentSettings: overrideEnvironmentSettings,
+                //    overrideColorScheme: colorScheme,
+                //    gameplayModifiers: gameplayModifiers ?? new GameplayModifiers(),
+                //    playerSpecificSettings: playerSettings ?? new PlayerSpecificSettings(),
+                //    practiceSettings: null,
+                //    backButtonText: "Menu",
+                //    useTestNoteCutSoundEffects: false,
+                //    startPaused: false,  /* TODO: start paused? Worth looking into to replace the old hacky function */
+                //    beforeSceneSwitchCallback: null,
+                //    afterSceneSwitchCallback: null,
+                //    levelFinishedCallback: (standardLevelScenesTransitionSetupData, results) => songFinishedCallback?.Invoke(standardLevelScenesTransitionSetupData, results)
+                //);
             };
 
             if ((level is PreviewBeatmapLevelSO && await HasDLCLevel(level.levelID)) ||

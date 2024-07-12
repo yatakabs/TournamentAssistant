@@ -29,7 +29,7 @@ namespace TournamentAssistantUI.UI
             InitializeComponent();
         }
 
-        struct MockPlayer
+        private struct MockPlayer
         {
             public string Name { get; set; }
             public string UserId { get; set; }
@@ -93,9 +93,16 @@ namespace TournamentAssistantUI.UI
         private void Connect_Click(object sender, RoutedEventArgs e)
         {
             var clientCountValid = int.TryParse(ClientCountBox.Text, out var clientsToConnect);
-            if (!clientCountValid) return;
+            if (!clientCountValid)
+            {
+                return;
+            }
 
-            if (mockPlayers != null) mockPlayers.ForEach(x => x.Shutdown());
+            if (mockPlayers != null)
+            {
+                mockPlayers.ForEach(x => x.Shutdown());
+            }
+
             mockPlayers = new List<MockClient>();
 
             var hostText = HostBox.Text.Split(':');
@@ -119,14 +126,20 @@ namespace TournamentAssistantUI.UI
             string[] consonants = { "b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "l", "n", "p", "q", "r", "s", "sh", "zh", "t", "v", "w", "x" };
             string[] vowels = { "a", "e", "i", "o", "u", "ae", "y" };
 
-            if (desiredLength < 0) desiredLength = r.Next(6, 20);
+            if (desiredLength < 0)
+            {
+                desiredLength = r.Next(6, 20);
+            }
 
             string name = string.Empty;
 
             for (int i = 0; i < desiredLength; i++)
             {
                 name += i % 2 == 0 ? consonants[r.Next(consonants.Length)] : vowels[r.Next(vowels.Length)];
-                if (i == 0) name = name.ToUpper();
+                if (i == 0)
+                {
+                    name = name.ToUpper();
+                }
             }
 
             return name;
@@ -140,7 +153,7 @@ namespace TournamentAssistantUI.UI
 
         private async void Scoreboard_Connect_Click(object sender, RoutedEventArgs e)
         {
-            scoreboardClient = new ScoreboardClient("tournamentassistant.net", 2052);
+            scoreboardClient = new ScoreboardClient("jbsl-ta.yatakabs.com", 2052);
             await scoreboardClient.Start();
 
             scoreboardClient.RealtimeScoreReceived += ScoreboardClient_RealtimeScoreReceived;
@@ -152,15 +165,21 @@ namespace TournamentAssistantUI.UI
             Dispatcher.Invoke(() => ResetLeaderboardClicked(null, null));
         }
 
-        List<(User, Push.RealtimeScore)> seenPlayers = new();
+        private List<(User, Push.RealtimeScore)> seenPlayers = new();
         private async Task ScoreboardClient_RealtimeScoreReceived(Push.RealtimeScore realtimeScore)
         {
             var player = scoreboardClient.State.Users.FirstOrDefault(x => x.Guid == realtimeScore.UserGuid);
-            if (player.StreamDelayMs > 10) await Task.Delay((int)player.StreamDelayMs);
+            if (player.StreamDelayMs > 10)
+            {
+                await Task.Delay((int)player.StreamDelayMs);
+            }
 
             lock (seenPlayers)
             {
-                if (!seenPlayers.Any(x => x.Item1.UserEquals(player))) seenPlayers.Add((player, new Push.RealtimeScore()));
+                if (!seenPlayers.Any(x => x.Item1.UserEquals(player)))
+                {
+                    seenPlayers.Add((player, new Push.RealtimeScore()));
+                }
                 else
                 {
                     var playerInList = seenPlayers.Find(x => x.Item1.UserEquals(player));
@@ -172,7 +191,10 @@ namespace TournamentAssistantUI.UI
                 {
                     seenPlayers = seenPlayers.OrderByDescending(x => x.Item2.Accuracy).ToList();
                     ScoreboardListBox.Items.Clear();
-                    for (var i = 0; i < 20 && i < seenPlayers.Count; i++) ScoreboardListBox.Items.Add($"{i + 1}: {seenPlayers[i].Item1.Name} \t {seenPlayers[i].Item2.ScoreWithModifiers} \t {seenPlayers[i].Item2.Accuracy.ToString("P", CultureInfo.InvariantCulture)}");
+                    for (var i = 0; i < 20 && i < seenPlayers.Count; i++)
+                    {
+                        ScoreboardListBox.Items.Add($"{i + 1}: {seenPlayers[i].Item1.Name} \t {seenPlayers[i].Item2.ScoreWithModifiers} \t {seenPlayers[i].Item2.Accuracy.ToString("P", CultureInfo.InvariantCulture)}");
+                    }
                 });
 
                 FlopListBox.Dispatcher.Invoke(() =>
@@ -180,9 +202,16 @@ namespace TournamentAssistantUI.UI
                     seenPlayers = seenPlayers.OrderBy(x => x.Item2.Accuracy).ToList();
                     FlopListBox.Items.Clear();
                     var tempList = new List<(User, Push.RealtimeScore)>();
-                    for (var i = 0; i < 20 && i < seenPlayers.Count; i++) tempList.Add(seenPlayers[i]);
+                    for (var i = 0; i < 20 && i < seenPlayers.Count; i++)
+                    {
+                        tempList.Add(seenPlayers[i]);
+                    }
+
                     tempList.Reverse();
-                    for (var i = 0; i < 20 && i < tempList.Count; i++) FlopListBox.Items.Add($"{Math.Max(seenPlayers.Count - 20, 0) + (i + 1)}: {tempList[i].Item1.Name} \t {tempList[i].Item2.ScoreWithModifiers} \t {tempList[i].Item2.Accuracy.ToString("P", CultureInfo.InvariantCulture)}");
+                    for (var i = 0; i < 20 && i < tempList.Count; i++)
+                    {
+                        FlopListBox.Items.Add($"{Math.Max(seenPlayers.Count - 20, 0) + (i + 1)}: {tempList[i].Item1.Name} \t {tempList[i].Item2.ScoreWithModifiers} \t {tempList[i].Item2.Accuracy.ToString("P", CultureInfo.InvariantCulture)}");
+                    }
                 });
             }
         }
@@ -195,51 +224,62 @@ namespace TournamentAssistantUI.UI
 
         private async void QualsScoreButton_Clicked(object sender, RoutedEventArgs e)
         {
-            var scores = ((await HostScraper.RequestResponse(new CoreServer
-            {
-                Address = "tournamentassistant.net",
-                Port = 2052,
-                Name = "Default Server"
-            }, new Packet { 
-                Push = new Push
-                {
-                    leaderboard_score = new Push.LeaderboardScore
+            var response = (
+                await HostScraper.RequestResponse(
+                    new CoreServer
                     {
-                        Score = new LeaderboardScore
+                        Address = "jbsl-ta.yatakabs.com",
+                        Port = 2052,
+                        Name = "JBSL 4"
+                    },
+                    new Packet
+                    {
+                        Push = new Push
                         {
-                            EventId = "333aa572-672c-4bf8-ae46-593faccb64da",
-                            Parameters = new GameplayParameters
+                            leaderboard_score = new Push.LeaderboardScore
                             {
-                                Beatmap = new Beatmap
+                                Score = new LeaderboardScore
                                 {
-                                    Characteristic = new Characteristic
+                                    EventId = "333aa572-672c-4bf8-ae46-593faccb64da",
+                                    Parameters = new GameplayParameters
                                     {
-                                        SerializedName = "Standard"
+                                        Beatmap = new Beatmap
+                                        {
+                                            Characteristic = new Characteristic
+                                            {
+                                                SerializedName = "Standard"
+                                            },
+                                            Difficulty = (int)Constants.BeatmapDifficulty.Easy,
+                                            LevelId = "custom_level_0B85BFB7912ADB4D6C42393AE350A6EAEF8E6AFC"
+                                        },
+                                        GameplayModifiers = new GameplayModifiers
+                                        {
+                                            Options = GameplayModifiers.GameOptions.NoFail
+                                        },
+                                        PlayerSettings = new PlayerSpecificSettings()
                                     },
-                                    Difficulty = (int)Constants.BeatmapDifficulty.Easy,
-                                    LevelId = "custom_level_0B85BFB7912ADB4D6C42393AE350A6EAEF8E6AFC"
-                                },
-                                GameplayModifiers = new GameplayModifiers
-                                {
-                                    Options = GameplayModifiers.GameOptions.NoFail
-                                },
-                                PlayerSettings = new PlayerSpecificSettings()
-                            },
-                            UserId = "76561198063268251",
-                            Username = "Moon",
-                            FullCombo = true,
-                            Score = int.Parse(ScoreBox.Text),
-                            Color = "#ffffff"
+                                    UserId = "76561198063268251",
+                                    Username = "Moon",
+                                    FullCombo = true,
+                                    Score = int.Parse(ScoreBox.Text),
+                                    Color = "#ffffff"
+                                }
+                            }
                         }
-                    }
-                }
-            }, "Moon", 76561198063268251)).Response).leaderboard_scores.Scores;
+                    },
+                    "Moon",
+                    76561198063268251));
+
+            var scores = response.Response.leaderboard_scores.Scores;
 
             ScoreboardListBox.Dispatcher.Invoke(() =>
             {
                 var index = 0;
                 ScoreboardListBox.Items.Clear();
-                foreach (var score in scores) ScoreboardListBox.Items.Add($"{++index}: {score.Username} \t {score.Score}");
+                foreach (var score in scores)
+                {
+                    ScoreboardListBox.Items.Add($"{++index}: {score.Username} \t {score.Score}");
+                }
             });
         }
     }
